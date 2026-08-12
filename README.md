@@ -134,7 +134,7 @@ This tool deliberately does only half the job. It handles **discovery**: given a
 A typical exchange looks like:
 
 1. You ask something the model can't answer from training data
-2. `brave` returns however many results `count` is set to, 10 by default, as titles, URLs, and one-line snippets. At the default that's roughly 1,200 tokens
+2. The model calls `brave`, choosing how many results it wants via the `count` argument (1 to 20, or 10 if it doesn't say). Each result comes back as a title, URL, and one-line snippet, so ten of them is roughly 1,200 tokens
 3. The model picks the one or two URLs that look right
 4. `webfetch` pulls those pages as markdown and reads them in full
 5. The model answers from the retrieved text
@@ -243,7 +243,9 @@ Every failure returns as a string rather than throwing, so the model sees a read
 
 **Different name.** Rename the file and the tool renames with it. Avoid built-in tool names.
 
-**Fewer results.** The default is 10. Dropping `.default(10)` to 5 roughly halves per-call tokens and is usually plenty for a targeted question. The `.max(20)` is Brave's own ceiling; quality falls off well before that.
+**Result count.** The model can already ask for anything from 1 to 20 per search; 10 is only what it uses when it doesn't specify. To steer that per query without touching the code, put a line in your `AGENTS.md`, for example "use count 20 for research questions and count 5 for quick lookups".
+
+To change the default itself, edit `.default(10)`. Dropping it to 5 roughly halves per-call tokens and is plenty for a targeted question. The `.max(20)` is Brave's own ceiling, and quality falls off well before that.
 
 **Region and language.** Brave defaults to `US` and `en`. Add `url.searchParams.set("country", "DK")` and `search_lang` next to the other params if you want different defaults. Hardcode them rather than exposing them as arguments, since every argument costs schema tokens.
 
