@@ -1,18 +1,16 @@
-# Brave search tool for opencode
+# Brave search plugin for opencode
 
-A custom opencode tool that adds web search backed by the Brave Search API.
+An OpenCode 2 plugin that adds a web search tool backed by the Brave Search API.
 
-opencode's own `websearch` tool routes through Exa's hosted service and is only available on the opencode provider or with `OPENCODE_ENABLE_EXA` set. This one calls Brave directly, works on any provider, and returns a compact result list instead of a full API response object.
+OpenCode's own `websearch` tool routes through Exa's hosted service and is only available on the opencode provider or with `OPENCODE_ENABLE_EXA` set. This one calls Brave directly, works on any provider, and returns a compact result list instead of a full API response object.
 
-It is a single file with no dependencies beyond `@opencode-ai/plugin`.
+It is a single file with no dependencies.
 
 ## A note on the tool's name
 
-The tool is called `brave`, not `websearch`.
+The tool is called `brave`.
 
-`websearch` is reserved. A custom tool with that name is silently dropped: it never appears in the tool list, and nothing is written to the log. This holds whether the file sits in `~/.config/opencode/tools/`, a project's `.opencode/tools/`, or is registered through the plugin API, and it holds with Exa both enabled and disabled. Verified on opencode 1.18.16.
-
-opencode's docs state that a custom tool with the same name as a built-in takes precedence. That is not true for `websearch` on this version. Don't spend time on it; name the file something else.
+OpenCode 2 ships its own `websearch` tool, so this plugin registers a distinct name and the two can coexist. The name is set by the `name` field inside the plugin, not by the filename, so rename the file freely.
 
 You do not need to tell the model to use the `brave` tool. Models select tools from their descriptions, so a request that calls for a web search will reach for it on its own.
 
@@ -30,34 +28,20 @@ Brave's API is metered and requires a card at signup, so check [the pricing page
 
 **2. Drop the file in place**
 
-```sh
-mkdir -p ~/.config/opencode/tools
-cp brave.ts ~/.config/opencode/tools/brave.ts
-```
-
-The filename becomes the tool name, so `brave.ts` creates a `brave` tool. Rename it to whatever you like, avoiding the names of built-in tools.
-
-Use `.opencode/tools/brave.ts` inside a project instead if you want it scoped to that project only.
-
-**3. Check the plugin dependency**
-
-The tool imports `@opencode-ai/plugin`, which opencode installs from a `package.json` in your config directory at startup.
+OpenCode 2 discovers plugins under a `plugins/` directory, not the old `tools/` directory.
 
 ```sh
-cat ~/.config/opencode/package.json
-opencode --version
+mkdir -p ~/.config/opencode/plugins
+cp brave.ts ~/.config/opencode/plugins/brave.ts
 ```
 
-The two versions should match. If the file doesn't exist, or the pin is behind your opencode version:
+That installs it for every project. Use `.opencode/plugins/brave.ts` inside a project instead to scope it to that project only.
 
-```sh
-cd ~/.config/opencode
-npm install @opencode-ai/plugin@latest
-```
+There is no dependency to install. The plugin is a plain default export with no imports.
 
-**4. Store the key as an environment variable** *(systemd Linux)*
+**3. Store the key as an environment variable** *(systemd Linux)*
 
-An environment variable is a named value your login session hands to every program it starts. The tool looks up `BRAVE_API_KEY` when it runs, so the key never gets written into the tool or into any file you'd commit.
+An environment variable is a named value your login session hands to every program it starts. The plugin looks up `BRAVE_API_KEY` when it runs, so the key never gets written into the plugin or into any file you'd commit.
 
 This step uses `environment.d`, which is a systemd feature. It works on Ubuntu 22.04 and later, and equally on Fedora, Debian 12+, Arch, and other current systemd distros. It does not apply to macOS or Windows, or to non-systemd distros like Alpine, Void, or Gentoo on OpenRC.
 
@@ -76,7 +60,7 @@ systemd merges every `.conf` in that directory, so this leaves any existing ones
 
 This covers everything your desktop session starts: apps launched from the apps menu, pinned AppImages, terminals you open, and opencode run inside them. It does not cover SSH or TTY logins, which bypass the session manager; add `export BRAVE_API_KEY="..."` to your `~/.zshrc` if you need those.
 
-**5. Verify**
+**4. Verify**
 
 From a project directory, not your home directory:
 
@@ -84,7 +68,7 @@ From a project directory, not your home directory:
 opencode run "list every tool you have available, names only"
 ```
 
-`brave` should be in the list. If it isn't, the file isn't loading: check the path and the plugin dependency from step 3. opencode does not log tool loading errors, so the tool list is the only signal you get.
+`brave` should be in the list. If it isn't, the file isn't loading: check the path. OpenCode does not log tool loading errors, so the tool list is the only signal you get.
 
 Once it's listed:
 
@@ -92,7 +76,9 @@ Once it's listed:
 opencode run "use the brave tool to search for: brave search api pricing"
 ```
 
-Output starting with `Brave results for "..."` means it's working. A message about `BRAVE_API_KEY` not being set means step 4 hasn't taken effect yet, which usually means a reboot is still needed.
+Output starting with `Brave results for "..."` means it's working. A message about `BRAVE_API_KEY` not being set means step 3 hasn't taken effect yet, which usually means a reboot is still needed.
+
+Changes to a plugin file are picked up when OpenCode reloads; a restart of the service is the reliable way to be sure.
 
 ---
 
@@ -149,7 +135,7 @@ The tradeoff is an extra round trip. Snippet-only search means the model sometim
 
 - It needs permission. If it's prompting or refusing, set it in your opencode config:
   ```json
-  { "permission": { "webfetch": "allow" } }
+  { "permissions": [{ "action": "webfetch", "resource": "*", "effect": "allow" }] }
   ```
 - It has a 5MB response ceiling and errors with "Response too large" past that.
 - Cloudflare and similar bot protection will block some fetches. When one fails, the snippet from search is still in context.
@@ -160,37 +146,29 @@ The tradeoff is an extra round trip. Snippet-only search means the model sometim
 
 ## Why this instead of the Brave MCP server
 
-The official Brave MCP server exposes eight tools (web, news, local, place, image, video, summarizer, llm_context). All eight schemas are injected into every request: 110,955 characters of tool definitions, against 5,640 for the single web search tool. That one tool carries fifteen parameters by itself.
+The official Brave MCP server exposes eight tools (web, news, local, place, image, video, summarizer, llm_context). All eight schemas are injected into every request. Measured with `tools/list`: **111,105 characters** of tool definitions for the full set, against **5,645** for the same server whitelisted to web search alone. That one tool carries fifteen parameters by itself.
 
-This tool exposes three arguments and one schema, and it prunes the response before returning it. Two request parameters do most of that work:
+This plugin exposes three arguments and one schema, and it prunes the response before returning it. Two request parameters do most of that work:
 
 - `text_decorations=false` stops Brave wrapping matched terms in `<strong>` tags
 - `result_filter=web` drops the query-analysis and infobox blocks from the payload
 
-The remaining fields are formatted down to title, source, age, URL, and snippet. A raw Brave result object carries a dozen more fields including nested `meta_url` and `thumbnail` objects. Measured on a 10-result response, this tool's output was roughly a third the size of what the MCP server returns for the same query.
+The remaining fields are formatted down to title, source, age, URL, and snippet. A raw Brave result object carries a dozen more fields including nested `meta_url` and `thumbnail` objects.
 
-Measured on opencode 1.18.16:
+Measured on the same query, `count=10`:
 
-| | Fixed per request | Per search call |
+| | Tool schema (all tools) | Per search call |
 | --- | --- | --- |
-| Brave MCP, all 8 tools | 9,879 | ~4,200 |
-| Brave MCP, whitelisted to web search | 1,674 | ~4,200 |
-| This tool | 222 | ~1,200 |
+| Brave MCP, all 8 tools | 111,105 chars | 13,442 chars |
+| Brave MCP, whitelisted to web search | 5,645 chars | 13,442 chars |
+| This plugin | one tool, three arguments | 3,763 chars |
 
-All three fixed-cost figures are real context tokens on opencode 1.18.16, measured by sending one word in a fresh session and reading the counter, with and without each configuration. Baseline was 13,556; adding the MCP server whitelisted to one tool took it to 15,230, and with all eight tools to 23,435. The custom tool adds 222.
-
-Whitelisting only affects the fixed column. It doesn't change what a search returns, since it's the same `brave_web_search` tool being invoked either way.
-
-The MCP per-call figure is measured too, by calling `brave_web_search` directly over stdio: 16,682 characters against 4,773 for the same query through this tool, so roughly 3.5x. Worth noting the server does trim: Brave's raw JSON for that query was 71,661 characters, so most of the bloat is removed before it reaches the model.
-
-Whitelisting removes about 83% of the MCP server's fixed cost, so the seven tools you probably don't want account for most of it. Even so, the whitelisted server still costs 7.5x what the custom tool does, because the MCP transport and the tool's fifteen parameters carry weight the two-argument version doesn't.
-
-A note on method, since it matters: sizing schemas by counting characters on the wire and dividing by four does not work. That approach gave 27,700 for the eight-tool case against a real 9,879, and 1,410 for the whitelisted case against a real 1,674. Wrong in both directions. Only the in-session token counter gives numbers worth quoting.
+The per-call figure is roughly 3.5x smaller than the MCP server's, and the fixed cost drops from eight schemas to one small one. Whitelisting only affects the fixed column; it doesn't change what a search returns, since it's the same `brave_web_search` tool being invoked either way.
 
 To reproduce any of these:
 
 ```sh
-# this tool's per-call output
+# this plugin's per-call output
 curl -s --compressed -H "Accept: application/json" \
   -H "X-Subscription-Token: $BRAVE_API_KEY" \
   "https://api.search.brave.com/res/v1/web/search?q=YOUR+QUERY&count=10&text_decorations=false&result_filter=web" \
@@ -211,12 +189,14 @@ If you'd rather keep the MCP server, you can cut most of the fixed cost without 
 
 ```json
 "mcp": {
-  "brave-search": {
-    "type": "local",
-    "command": ["npx", "-y", "@brave/brave-search-mcp-server"],
-    "environment": {
-      "BRAVE_API_KEY": "...",
-      "BRAVE_MCP_ENABLED_TOOLS": "brave_web_search"
+  "servers": {
+    "brave-search": {
+      "type": "local",
+      "command": ["npx", "-y", "@brave/brave-search-mcp-server"],
+      "environment": {
+        "BRAVE_API_KEY": "...",
+        "BRAVE_MCP_ENABLED_TOOLS": "brave_web_search"
+      }
     }
   }
 }
@@ -230,7 +210,7 @@ Every failure returns as a string rather than throwing, so the model sees a read
 
 | Condition | Behaviour |
 | --- | --- |
-| `BRAVE_API_KEY` unset | Says so; check step 4 |
+| `BRAVE_API_KEY` unset | Says so; check step 3 |
 | 401 / 403 | Key rejected, or subscription inactive |
 | 402 / 429 | Rate limit or spend cap hit. Explicitly instructs the model not to retry or reword, so a dead key doesn't burn queries in a loop |
 | Other non-2xx | Status code plus the first 300 chars of the body |
@@ -241,11 +221,13 @@ Every failure returns as a string rather than throwing, so the model sees a read
 
 ## Tweaks
 
-**Different name.** Rename the file and the tool renames with it. Avoid built-in tool names.
+**Different name.** Change the `name` field in the tool definition; the filename doesn't matter. Avoid built-in tool names.
+
+**Show it in Code Mode instead of directly.** The tool sets `options: { codemode: false }`, which puts `brave` straight in the model's tool list. Remove that line to let OpenCode 2 fold it into the Code Mode catalog instead.
 
 **Result count.** The model can already ask for anything from 1 to 20 per search; 10 is only what it uses when it doesn't specify. To steer that per query without touching the code, put a line in your `AGENTS.md`, for example "use count 20 for research questions and count 5 for quick lookups".
 
-To change the default itself, edit `.default(10)`. Dropping it to 5 roughly halves per-call tokens and is plenty for a targeted question. The `.max(20)` is Brave's own ceiling, and quality falls off well before that.
+To change the default itself, edit the `default: 10` in the `count` property. Dropping it to 5 roughly halves per-call tokens and is plenty for a targeted question. The `maximum: 20` is Brave's own ceiling, and quality falls off well before that.
 
 **Region and language.** Brave defaults to `US` and `en`. Add `url.searchParams.set("country", "DK")` and `search_lang` next to the other params if you want different defaults. Hardcode them rather than exposing them as arguments, since every argument costs schema tokens.
 
